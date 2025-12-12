@@ -9,7 +9,6 @@ COPY main.py .
 COPY estrutura.py .
 COPY planilha_fechamento.py .
 COPY gerenciador_usuarios.py .
-COPY .env .
 
 # Instalar dependências
 RUN pip install --no-cache-dir -r requirements.txt
