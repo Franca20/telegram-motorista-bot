@@ -80,7 +80,17 @@ class BotTelegram:
         return None
 
     def rodarbot(self):
-        ultimo_update_id = None
+        # Carrega último offset de arquivo para persistência
+        offset_file = 'ultimo_offset.txt'
+        try:
+            if os.path.exists(offset_file):
+                with open(offset_file, 'r') as f:
+                    ultimo_update_id = int(f.read().strip())
+            else:
+                ultimo_update_id = None
+        except:
+            ultimo_update_id = None
+        
         logger.info("Bot iniciando...")
 
         # Optionally clear the backlog of updates on startup so old messages are not processed
@@ -88,6 +98,7 @@ class BotTelegram:
             try:
                 self.clear_history(keep_last_n=self.keep_last_n)
                 logger.info("Histórico limpo com sucesso")
+                ultimo_update_id = None  # Reset após limpeza
             except Exception as e:
                 logger.warning(f"Falha ao limpar histórico no início: {e}")
 
@@ -100,25 +111,39 @@ class BotTelegram:
                     self.link_base = f"https://api.telegram.org/bot{self.token}/"
 
                 # Fazer requisição com retry
+                params = {}
+                if ultimo_update_id:
+                    params['offset'] = ultimo_update_id + 1
+                
                 dados = self.get_updates_com_retry()
                 if not dados:
                     logger.warning("Nenhum dado retornado, aguardando antes de tentar novamente...")
                     time.sleep(self.retry_delay)
                     continue
                 
-                for update in dados.get('result', []):
+                updates = dados.get('result', [])
+                
+                for update in updates:
                     try:
                         update_id = update.get('update_id')
-                        if ultimo_update_id is None or update_id > ultimo_update_id:
-                            if 'message' in update:
-                                self._processar_mensagem(update, chat_id=update['message']['chat'].get('id'))
-                                ultimo_update_id = update_id
+                        if 'message' in update:
+                            self._processar_mensagem(update, chat_id=update['message']['chat'].get('id'))
+                            ultimo_update_id = update_id
+                            # Persiste o offset
+                            with open(offset_file, 'w') as f:
+                                f.write(str(ultimo_update_id))
                     except (KeyError, TypeError) as e:
                         logger.error(f"Erro ao processar update {update_id}: {e}")
                         continue
                     except Exception as e:
                         logger.error(f"Erro inesperado ao processar update: {e}")
                         continue
+                
+                # Pequeno delay para não sobrecarregar API
+                if updates:
+                    time.sleep(0.5)
+                else:
+                    time.sleep(1)
                         
             except Exception as e:
                 logger.error(f"Erro crítico no loop principal: {e}", exc_info=True)
